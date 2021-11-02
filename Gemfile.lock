@@ -1,0 +1,17 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    sync (0.5.0)
+    term-ansicolor (1.7.1)
+      tins (~> 1.0)
+    tins (1.29.1)
+      sync
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  term-ansicolor
+
+BUNDLED WITH
+   2.2.3
