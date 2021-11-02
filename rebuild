@@ -2,7 +2,6 @@
 
 # TODO
 # - Add colour
-# - Check if base is already master_custom (nothing to do)
 # - When cherry-picking display log line instead of just the rev hash
 
 CUSTOM_BRANCH_NAME = 'master_custom'
@@ -80,12 +79,18 @@ module Git
                 log_line = gitio.readline.chomp
                 lines += 1
                 log_match = log_line.match /\A(?<commit>\w+)\s(?:\((?<branches>#{BRANCH_PATTERN}(?:,\s#{BRANCH_PATTERN})*)?\)\s)?/
+                commit = log_match['commit']
                 branches = log_match['branches'] ? log_match['branches'].split(', ') : []
+                break [ commit, CUSTOM_BRANCH_NAME ] if branches.include? CUSTOM_BRANCH_NAME
                 custom_backup_branch = branches.find { |bn| bn =~ CUSTOM_BACKUP_BRANCH_PATTERN }
-                break [ log_match['commit'], custom_backup_branch ] unless custom_backup_branch.nil?
+                break [ commit, custom_backup_branch ] unless custom_backup_branch.nil?
                 raise LightCustomBaseNotFound, 'light custom base not found' if lines > BASE_LOOKBACK_LIMIT
             end
         end
+    end
+
+    def self.base_is_custom_branch?
+        light_custom_base[1] == CUSTOM_BRANCH_NAME
     end
 
     def self.rev_list rev_range
@@ -197,6 +202,7 @@ class LightRebuilder
     private
 
     def start base_rev = nil
+        raise "base is already #{CUSTOM_BRANCH_NAME}, nothing to do" if Git.base_is_custom_branch?
         self.revs_to_go = base_rev.nil? ? Git.light_rev_list : Git.rev_list(base_rev..'HEAD')
         puts "#{'*' * 10} Using this rev list: #{'*' * 10}"
         Git.display_one_line_log "#{revs_to_go.last}^"..'HEAD'
