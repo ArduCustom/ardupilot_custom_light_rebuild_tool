@@ -317,7 +317,7 @@ rescue => error
     if options.debug?
         raise
     else
-        STDERR.puts unless [ LightRebuilder::NothingToDo, LightRebuilder::NotOnTheRightBranch ].include? error.class
+        STDERR.puts unless [ ArgumentError, LightRebuilder::NothingToDo, LightRebuilder::NotOnTheRightBranch ].include? error.class
         STDERR.puts TermColor.red("error: #{error}")
         exit 2
     end
