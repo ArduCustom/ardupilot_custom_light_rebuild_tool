@@ -83,10 +83,13 @@ class LightRebuilder
             puts TermColor.bold("# Cherry picking rev ") + Git.rev_one_line_log(rev)
             Git.cherry_pick rev
         end
-    rescue
-        write_status_file
+    rescue Interrupt
+        raise
+    rescue Git::CherryPickingFailed
         STDERR.puts TermColor.bold_yellow("\nCherry-picking failed, please fix the conflict(s) and run again")
         exit 4
+    ensure
+        write_status_file
     end
 
     def load_status_file

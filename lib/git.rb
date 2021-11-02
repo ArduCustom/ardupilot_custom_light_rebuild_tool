@@ -12,6 +12,7 @@ module Git
     class LightCustomBaseNotFound < StandardError; end
     class NoBackupBranchFound < StandardError; end
     class FailedToCommit < StandardError; end
+    class CherryPickingFailed < StandardError; end
 
     def self.has_uncommited_changes?
         not system 'git diff --name-only --diff-filter=M --exit-code > /dev/null'
@@ -101,7 +102,7 @@ module Git
 
     def self.cherry_pick rev
         result = system "git cherry-pick \"#{rev}\" > /dev/null 2>&1"
-        raise "failed to cherry-pick rev #{rev}" unless result
+        raise CherryPickingFailed, "failed to cherry-pick rev #{rev}" unless result
     end
 
     def self.display_one_line_log revs
