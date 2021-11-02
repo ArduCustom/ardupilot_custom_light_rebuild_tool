@@ -9,6 +9,7 @@ class LightRebuilder
 
     class NotOnTheRightBranch < StandardError; end
     class NothingToDo < StandardError; end
+    class UncommitedChanges < StandardError; end
 
     def run base_rev = nil
         raise NotOnTheRightBranch, "not on the #{LIGHT_BRANCH_NAME} branch" unless Git.branch_name == LIGHT_BRANCH_NAME
@@ -34,6 +35,7 @@ class LightRebuilder
     private
 
     def start base_rev = nil
+        raise UncommitedChanges, 'repos contains uncommited changes' if Git.has_uncommited_changes? or not Git.index_empty?
         raise NothingToDo, "nothing to do, base is already #{CUSTOM_BRANCH_NAME}" if Git.base_is_custom_branch?
         self.revs_to_go = base_rev.nil? ? Git.light_rev_list : Git.rev_list(base_rev..'HEAD')
         raise 'no commit to pick' if revs_to_go.empty?

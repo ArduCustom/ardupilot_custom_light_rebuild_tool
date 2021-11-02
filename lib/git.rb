@@ -13,6 +13,10 @@ module Git
     class NoBackupBranchFound < StandardError; end
     class FailedToCommit < StandardError; end
 
+    def self.has_uncommited_changes?
+        not system 'git diff --name-only --diff-filter=M --exit-code > /dev/null'
+    end
+
     def self.branch_name
         `git rev-parse --abbrev-ref HEAD`.chomp
     end
