@@ -4,7 +4,6 @@
 # - Add colour
 # - Check multiple branch names when looking for backup
 # - Check if base is already master_custom (nothing to do)
-# - Error if base branch can't be found and base_rev not specified
 # - When cherry-picking display log line instead of just the rev hash
 
 BRANCH_NAME = 'master_custom_light'
@@ -165,7 +164,7 @@ class LightRebuilder
 
     def run base_rev = nil
         raise "not on the #{BRANCH_NAME} branch" unless Git.branch_name == BRANCH_NAME
-        raise ArgumentError, 'too many arguments, rebuild in progress' if load_status_file and not base_rev.nil?
+        raise ArgumentError, 'rebuild in progress, no base_rev argument expected' if load_status_file and not base_rev.nil?
 
         if revs_to_go.nil?
             start base_rev
@@ -196,6 +195,8 @@ class LightRebuilder
         puts
         self.backup_branch = Git.backup_branch
         Git.hard_reset_to 'master_custom'
+    rescue Git::LightCustomBaseNotFound
+        raise ArgumentError, "the master_custom base hasn't been found, you need to specify the base revision"
     end
 
     def cherry_pick
