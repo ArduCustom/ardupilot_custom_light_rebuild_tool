@@ -202,9 +202,9 @@ class LightRebuilder
         Git.display_one_line_log "#{revs_to_go.last}^"..'HEAD'
         puts
         self.backup_branch = Git.backup_branch
-        Git.hard_reset_to 'master_custom'
+        Git.hard_reset_to CUSTOM_BRANCH_NAME
     rescue Git::LightCustomBaseNotFound
-        raise ArgumentError, "the master_custom base hasn't been found, you need to specify the base revision"
+        raise ArgumentError, "the #{CUSTOM_BRANCH_NAME} base hasn't been found, you need to specify the base revision"
     end
 
     def cherry_pick
