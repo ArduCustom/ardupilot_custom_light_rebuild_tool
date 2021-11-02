@@ -2,12 +2,15 @@
 
 # TODO
 # - Add colour
-# - Check multiple branch names when looking for backup
 # - Check if base is already master_custom (nothing to do)
 # - When cherry-picking display log line instead of just the rev hash
 
-BRANCH_NAME = 'master_custom_light'
-BACKUP_BRANCH_NAME = "#{BRANCH_NAME}_backup"
+CUSTOM_BRANCH_NAME = 'master_custom'
+LIGHT_BRANCH_NAME = 'master_custom_light'
+
+CUSTOM_BACKUP_BRANCH_NAME = "#{CUSTOM_BRANCH_NAME}_backup"
+LIGHT_BACKUP_BRANCH_NAME = "#{LIGHT_BRANCH_NAME}_backup"
+
 
 require 'optparse'
 require 'yaml'
@@ -58,7 +61,10 @@ end
 
 module Git
 
-    BACKUP_BRANCH_PATTERN = /\A#{BACKUP_BRANCH_NAME}(\d*)\Z/
+    BASE_LOOKBACK_LIMIT = 100 # commits
+    CUSTOM_BACKUP_BRANCH_PATTERN = /\A#{CUSTOM_BACKUP_BRANCH_NAME}(\d*)\Z/
+    LIGHT_BACKUP_BRANCH_PATTERN = /\A#{LIGHT_BACKUP_BRANCH_NAME}(\d*)\Z/
+    BRANCH_PATTERN = /\w+(?:\/\w+)*/
 
     class LightCustomBaseNotFound < StandardError; end
     class NoBackupBranchFound < StandardError; end
@@ -73,9 +79,11 @@ module Git
             loop do
                 log_line = gitio.readline.chomp
                 lines += 1
-                log_match = log_line.match /\A(?<commit>\w+)\s\((?<branch_name>\w+)\)\s/
-                break log_match.captures unless log_match.nil?
-                raise LightCustomBaseNotFound, 'light custom base not found' if lines > 100
+                log_match = log_line.match /\A(?<commit>\w+)\s(?:\((?<branches>#{BRANCH_PATTERN}(?:,\s#{BRANCH_PATTERN})*)?\)\s)?/
+                branches = log_match['branches'] ? log_match['branches'].split(', ') : []
+                custom_backup_branch = branches.find { |bn| bn =~ CUSTOM_BACKUP_BRANCH_PATTERN }
+                break [ log_match['commit'], custom_backup_branch ] unless custom_backup_branch.nil?
+                raise LightCustomBaseNotFound, 'light custom base not found' if lines > BASE_LOOKBACK_LIMIT
             end
         end
     end
@@ -93,17 +101,17 @@ module Git
     end
 
     def self.backup_branches
-        branches.find_all { |bn| bn =~ BACKUP_BRANCH_PATTERN }
+        branches.find_all { |bn| bn =~ LIGHT_BACKUP_BRANCH_PATTERN }
     end
 
     def self.last_backup_branch_number
-        numbers = backup_branches.map { |bn| bn.match(BACKUP_BRANCH_PATTERN)[1].to_i }
+        numbers = backup_branches.map { |bn| bn.match(LIGHT_BACKUP_BRANCH_PATTERN)[1].to_i }
         raise NoBackupBranchFound, 'no backup branch found' if numbers.empty?
         numbers.max
     end
 
     def self.last_backup_branch_name
-        "#{BACKUP_BRANCH_NAME}#{last_backup_branch_number}"
+        "#{LIGHT_BACKUP_BRANCH_NAME}#{last_backup_branch_number}"
     end
 
     def self.next_backup_branch_number
@@ -113,7 +121,7 @@ module Git
     end
 
     def self.next_backup_branch_name
-        "#{BACKUP_BRANCH_NAME}#{next_backup_branch_number}"
+        "#{LIGHT_BACKUP_BRANCH_NAME}#{next_backup_branch_number}"
     end
 
     def self.head_branches
@@ -122,7 +130,7 @@ module Git
     end
 
     def self.head_backup_branch_name
-        head_branches.find { |bn| bn =~ BACKUP_BRANCH_PATTERN }
+        head_branches.find { |bn| bn =~ LIGHT_BACKUP_BRANCH_PATTERN }
     end
 
     def self.backup_branch
@@ -163,7 +171,7 @@ class LightRebuilder
     STATUS_FILE_NAME = 'light_rebuild.status'
 
     def run base_rev = nil
-        raise "not on the #{BRANCH_NAME} branch" unless Git.branch_name == BRANCH_NAME
+        raise "not on the #{LIGHT_BRANCH_NAME} branch" unless Git.branch_name == LIGHT_BRANCH_NAME
         raise ArgumentError, 'rebuild in progress, no base_rev argument expected' if load_status_file and not base_rev.nil?
 
         if revs_to_go.nil?
