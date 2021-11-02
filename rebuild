@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+CUSTOM_TAG_PATTERN = /custom-v(\d+)/
 CUSTOM_BRANCH_NAME = 'master_custom'
 LIGHT_BRANCH_NAME = 'master_custom_light'
 
@@ -60,7 +61,8 @@ module Git
     BASE_LOOKBACK_LIMIT = 100 # commits
     CUSTOM_BACKUP_BRANCH_PATTERN = /\A#{CUSTOM_BACKUP_BRANCH_NAME}(\d*)\Z/
     LIGHT_BACKUP_BRANCH_PATTERN = /\A#{LIGHT_BACKUP_BRANCH_NAME}(\d*)\Z/
-    BRANCH_PATTERN = /\w+(?:\/\w+)*/
+    BRANCH_PATTERN = /(?:tag:\s)?[\w-]+(?:\/[\w-]+)*/
+    BRANCHES_PATTERN = /#{BRANCH_PATTERN}(?:,\s#{BRANCH_PATTERN})*/
 
     class LightCustomBaseNotFound < StandardError; end
     class NoBackupBranchFound < StandardError; end
@@ -76,12 +78,12 @@ module Git
             loop do
                 log_line = gitio.readline.chomp
                 lines += 1
-                log_match = log_line.match /\A(?<commit>\w+)\s(?:\((?<branches>#{BRANCH_PATTERN}(?:,\s#{BRANCH_PATTERN})*)?\)\s)?/
+                log_match = log_line.match /\A(?<commit>\w+)\s(?:\((?<branches>#{BRANCHES_PATTERN})?\)\s)?/
                 commit = log_match['commit']
                 branches = log_match['branches'] ? log_match['branches'].split(', ') : []
                 break [ commit, CUSTOM_BRANCH_NAME ] if branches.include? CUSTOM_BRANCH_NAME
-                custom_backup_branch = branches.find { |bn| bn =~ CUSTOM_BACKUP_BRANCH_PATTERN }
-                break [ commit, custom_backup_branch ] unless custom_backup_branch.nil?
+                base_name = branches.find { |bn| bn.match(CUSTOM_BACKUP_BRANCH_PATTERN) or bn.match(/\Atag:\s#{CUSTOM_TAG_PATTERN}\Z/) }
+                break [ commit, base_name ] unless base_name.nil?
                 raise LightCustomBaseNotFound, 'light custom base not found' if lines > BASE_LOOKBACK_LIMIT
             end
         end
@@ -128,7 +130,7 @@ module Git
     end
 
     def self.head_branches
-        branches = `git log --decorate --oneline -1`.chomp.match(/\A\w+\s\(HEAD(?:\s->\s(\w+(?:,\s\w+)*))?\)/)[1]
+        branches = `git log --decorate --oneline -1`.chomp.match(/\A\w+\s\(HEAD(?:\s->\s(#{BRANCHES_PATTERN}))?\)/)[1]
         branches.nil? ? [] : branches.split(', ')
     end
 
