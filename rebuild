@@ -2,7 +2,7 @@
 
 # TODO
 # - Add colour
-# - When cherry-picking display log line instead of just the rev hash
+# - display revs to go when resuming
 
 CUSTOM_BRANCH_NAME = 'master_custom'
 LIGHT_BRANCH_NAME = 'master_custom_light'
@@ -160,6 +160,10 @@ module Git
         raise "failed to display log for rev range #{rev_range}" unless result
     end
 
+    def self.rev_one_line_log rev, color: true
+        `git log --oneline --no-decorate #{'--color ' if color}#{rev}^..#{rev}`.chomp
+    end
+
     def self.commit_no_edit
         result = system "git commit --no-edit > /dev/null 2>&1"
         raise "failed to commit" unless result
@@ -216,7 +220,7 @@ class LightRebuilder
     def cherry_pick
         while not revs_to_go.empty? do
             rev = revs_to_go.pop
-            puts "Cherry picking rev #{rev}"
+            puts "Cherry picking rev #{Git.rev_one_line_log rev}"
             Git.cherry_pick rev
         end
     rescue
