@@ -205,7 +205,7 @@ class LightRebuilder
 
     def abort
         raise NothingToDo, 'nothing to abort' unless load_status_file
-        Git.hard_reset_to backup_branch
+        Git.hard_reset_to backup_branch_name
         delete_status_file
     end
 
@@ -216,7 +216,7 @@ class LightRebuilder
         self.revs_to_go = base_rev.nil? ? Git.light_rev_list : Git.rev_list(base_rev..'HEAD')
         raise 'no commit to pick' if revs_to_go.empty?
         display_revs_to_go "# Starting rebuilding using light commits:"
-        self.backup_branch = Git.backup_branch
+        backup_branch
         Git.hard_reset_to CUSTOM_BRANCH_NAME
     rescue Git::LightCustomBaseNotFound
         raise ArgumentError, "the #{CUSTOM_BRANCH_NAME} base hasn't been found, you need to specify the base revision"
@@ -236,6 +236,14 @@ class LightRebuilder
 
     rescue Git::FailedToCommit
         raise "failed to commit, conflicts are probably left"
+    end
+
+    def backup_branch
+        self.backup_branch_name = Git.head_backup_branch_name
+        if backup_branch_name.nil?
+            self.backup_branch_name = Git.backup_branch
+            puts TermColor.bold("# Branch backed up with name ") + TermColor.yellow(backup_branch_name)
+        end
     end
 
     def display_revs_to_go header
@@ -259,16 +267,16 @@ class LightRebuilder
 
     def load_status_file
         status = YAML.load_file STATUS_FILE_NAME
-        raise 'status file error' unless status[:revs_to_go].is_a? Array and status[:backup_branch].is_a? String
+        raise 'status file error' unless status[:revs_to_go].is_a? Array and status[:backup_branch_name].is_a? String
         @revs_to_go = status[:revs_to_go]
-        @backup_branch = status[:backup_branch]
+        @backup_branch_name = status[:backup_branch_name]
         true
     rescue Errno::ENOENT
         false
     end
 
     def write_status_file
-        status = { revs_to_go: revs_to_go, backup_branch: backup_branch }
+        status = { revs_to_go: revs_to_go, backup_branch_name: backup_branch_name }
         File.open(STATUS_FILE_NAME, 'w') { |f| YAML.dump status, f }
         nil
     end
@@ -279,7 +287,7 @@ class LightRebuilder
     rescue Errno::ENOENT
     end
 
-    attr_accessor :revs_to_go, :backup_branch
+    attr_accessor :revs_to_go, :backup_branch_name
 
 end
 
