@@ -1,0 +1,267 @@
+#!/usr/bin/env ruby
+
+# TODO
+# - Add colour
+# - Check multiple branch names when looking for backup
+# - Check if base is already master_custom (nothing to do)
+# - Error if base branch can't be found and base_rev not specified
+# - When cherry-picking display log line instead of just the rev hash
+
+BRANCH_NAME = 'master_custom_light'
+BACKUP_BRANCH_NAME = "#{BRANCH_NAME}_backup"
+
+require 'optparse'
+require 'yaml'
+
+class XOptionParser < OptionParser
+
+    def initialize
+        super
+        self.banner = "Usage: #$0 [options] [base_rev]"
+        on('-a', '--abort', 'abort rebuild') { |value| @action = :abort }
+        on('-d', '--debug') { @debug = true }
+    end
+
+    def print_usage
+        STDERR.puts self
+        exit 1
+    end
+
+    def set_defaults
+        @action = :run
+        @degug = false
+    end
+
+    def validate!
+        raise ArgumentError, 'too many arguments' if ARGV.count > 1
+    end
+
+    def parse!
+        set_defaults
+        super
+        validate!
+        @base_rev = ARGV[0]
+        self
+    rescue ArgumentError => error
+        STDERR.puts "Error: #{error}\n\n"
+        print_usage
+    end
+
+    %i[ debug ].each do |name|
+        define_method "#{name}?" do
+            instance_variable_get "@#{name}"
+        end
+    end
+
+    attr_reader :base_rev, :action
+
+end
+
+module Git
+
+    BACKUP_BRANCH_PATTERN = /\A#{BACKUP_BRANCH_NAME}(\d*)\Z/
+
+    class LightCustomBaseNotFound < StandardError; end
+    class NoBackupBranchFound < StandardError; end
+
+    def self.branch_name
+        `git rev-parse --abbrev-ref HEAD`.chomp
+    end
+
+    def self.light_custom_base
+        IO.popen('git log --decorate --oneline') do |gitio|
+            lines = 0
+            loop do
+                log_line = gitio.readline.chomp
+                lines += 1
+                log_match = log_line.match /\A(?<commit>\w+)\s\((?<branch_name>\w+)\)\s/
+                break log_match.captures unless log_match.nil?
+                raise LightCustomBaseNotFound, 'light custom base not found' if lines > 100
+            end
+        end
+    end
+
+    def self.rev_list rev_range
+        `git rev-list #{rev_range}`.split("\n")
+    end
+
+    def self.light_rev_list
+        rev_list light_custom_base[0]..'HEAD'
+    end
+
+    def self.branches
+        `git branch`.split("\n").map { |bn| bn[2..-1] }
+    end
+
+    def self.backup_branches
+        branches.find_all { |bn| bn =~ BACKUP_BRANCH_PATTERN }
+    end
+
+    def self.last_backup_branch_number
+        numbers = backup_branches.map { |bn| bn.match(BACKUP_BRANCH_PATTERN)[1].to_i }
+        raise NoBackupBranchFound, 'no backup branch found' if numbers.empty?
+        numbers.max
+    end
+
+    def self.last_backup_branch_name
+        "#{BACKUP_BRANCH_NAME}#{last_backup_branch_number}"
+    end
+
+    def self.next_backup_branch_number
+        last_backup_branch_number + 1
+    rescue NoBackupBranchFound
+        1
+    end
+
+    def self.next_backup_branch_name
+        "#{BACKUP_BRANCH_NAME}#{next_backup_branch_number}"
+    end
+
+    def self.head_branches
+        branches = `git log --decorate --oneline -1`.chomp.match(/\A\w+\s\(HEAD(?:\s->\s(\w+(?:,\s\w+)*))?\)/)[1]
+        branches.nil? ? [] : branches.split(', ')
+    end
+
+    def self.head_backup_branch_name
+        head_branches.find { |bn| bn =~ BACKUP_BRANCH_PATTERN }
+    end
+
+    def self.backup_branch
+        head_backup_branch_name || next_backup_branch_name.tap do |branch_name|
+            result = system "git branch \"#{branch_name}\" > /dev/null"
+            raise 'failed to backup branch' unless result
+        end
+    end
+
+    def self.hard_reset_to rev
+        result = system "git reset --hard \"#{rev}\" > /dev/null 2>&1"
+        raise "failed to hard reset to #{rev}" unless result
+    end
+
+    def self.cherry_pick rev
+        result = system "git cherry-pick \"#{rev}\" > /dev/null 2>&1"
+        raise "failed to cherry-pick rev #{rev}" unless result
+    end
+
+    def self.display_one_line_log rev_range
+        result = system "git log --oneline --no-decorate #{rev_range}"
+        raise "failed to display log for rev range #{rev_range}" unless result
+    end
+
+    def self.commit_no_edit
+        result = system "git commit --no-edit > /dev/null 2>&1"
+        raise "failed to commit" unless result
+    end
+
+    def self.index_empty?
+        system "git diff --cached --exit-code > /dev/null"
+    end
+
+end
+
+class LightRebuilder
+
+    STATUS_FILE_NAME = 'light_rebuild.status'
+
+    def run base_rev = nil
+        raise "not on the #{BRANCH_NAME} branch" unless Git.branch_name == BRANCH_NAME
+        raise ArgumentError, 'too many arguments, rebuild in progress' if load_status_file and not base_rev.nil?
+
+        if revs_to_go.nil?
+            start base_rev
+        else
+            unless Git.index_empty?
+                puts "Committing changes"
+                Git.commit_no_edit
+            end
+        end
+
+        cherry_pick
+        delete_status_file
+        puts "\nRebuild success"
+    end
+
+    def abort
+        raise 'nothing to abort' unless load_status_file
+        Git.hard_reset_to backup_branch
+        delete_status_file
+    end
+
+    private
+
+    def start base_rev = nil
+        self.revs_to_go = base_rev.nil? ? Git.light_rev_list : Git.rev_list(base_rev..'HEAD')
+        puts "#{'*' * 10} Using this rev list: #{'*' * 10}"
+        Git.display_one_line_log "#{revs_to_go.last}^"..'HEAD'
+        puts
+        self.backup_branch = Git.backup_branch
+        Git.hard_reset_to 'master_custom'
+    end
+
+    def cherry_pick
+        while not revs_to_go.empty? do
+            rev = revs_to_go.pop
+            puts "Cherry picking rev #{rev}"
+            Git.cherry_pick rev
+        end
+    rescue
+        write_status_file
+        STDERR.puts "\nCherry-picking failed, please fix the conflict(s) and run again"
+        exit 4
+    end
+
+    def load_status_file
+        status = YAML.load_file STATUS_FILE_NAME
+        raise 'status file error' unless status[:revs_to_go].is_a? Array and status[:backup_branch].is_a? String
+        @revs_to_go = status[:revs_to_go]
+        @backup_branch = status[:backup_branch]
+        true
+    rescue Errno::ENOENT
+        false
+    end
+
+    def write_status_file
+        status = { revs_to_go: revs_to_go, backup_branch: backup_branch }
+        File.open(STATUS_FILE_NAME, 'w') { |f| YAML.dump status, f }
+        nil
+    end
+
+    def delete_status_file
+        File.delete STATUS_FILE_NAME
+        nil
+    rescue Errno::ENOENT
+    end
+
+    attr_accessor :revs_to_go, :backup_branch
+
+end
+
+begin
+
+    options = XOptionParser.new.parse!
+
+    rebuilder = LightRebuilder.new
+
+    case options.action
+    when :abort
+        rebuilder.abort
+    when :run
+        rebuilder.run options.base_rev
+    else
+        raise "invalid action: #{options.action}"
+    end
+
+rescue Interrupt
+    STDERR.puts "User interrupt"
+    exit 1
+
+rescue => error
+
+    if options.debug?
+        raise
+    else
+        STDERR.puts "error: #{error}"
+        exit 2
+    end
+
+end
