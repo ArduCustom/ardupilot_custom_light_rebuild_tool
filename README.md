@@ -1,4 +1,4 @@
-# ArduPilot light builder
+# ArduPilot master_custom_light branch rebuilder
 
 To use this script:
 
