@@ -41,6 +41,8 @@ module Git
 
     def self.base_is_custom_branch?
         light_custom_base[1] == CUSTOM_BRANCH_NAME
+    rescue LightCustomBaseNotFound
+        false
     end
 
     def self.rev_list rev_range
