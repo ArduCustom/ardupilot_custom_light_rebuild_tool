@@ -12,12 +12,15 @@ class LightRebuilder
     class UncommitedChanges < StandardError; end
     class NotInReposRoot < StandardError; end
 
-    def run base_rev = nil
+    def run base_rev = nil, dry: false
         raise NotOnTheRightBranch, "not on the #{LIGHT_BRANCH_NAME} branch" unless Git.branch_name == LIGHT_BRANCH_NAME
-        raise ArgumentError, 'rebuild in progress, no base_rev argument expected' if load_status_file and not base_rev.nil?
+        resuming = load_status_file
+        raise ArgumentError, 'rebuild in progress, no base_rev argument expected' if resuming and not base_rev.nil?
+        raise ArgumentError, 'cannot dry run resume operation' if resuming and dry
 
         if revs_to_go.nil?
-            start base_rev
+            start base_rev, dry: dry
+            return if dry
         else
             resume
         end
@@ -35,13 +38,14 @@ class LightRebuilder
 
     private
 
-    def start base_rev = nil
+    def start base_rev = nil, dry:
         raise NotInReposRoot, 'not in repos root' unless File.exist? '.git'
         raise UncommitedChanges, 'repos contains uncommited changes' if Git.has_uncommited_changes? or not Git.index_empty?
         raise NothingToDo, "nothing to do, base is already #{CUSTOM_BRANCH_NAME}" if Git.base_is_custom_branch?
         self.revs_to_go = base_rev.nil? ? Git.light_rev_list : Git.rev_list(base_rev..'HEAD')
         raise 'no commit to pick' if revs_to_go.empty?
-        display_revs_to_go "# Starting rebuilding using light commits:"
+        display_revs_to_go "# #{dry ? "Would rebuild" : "Starting rebuilding"} using light commits:"
+        return if dry
         backup_branch
         Git.hard_reset_to CUSTOM_BRANCH_NAME
     rescue Git::LightCustomBaseNotFound

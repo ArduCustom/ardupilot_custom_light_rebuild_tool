@@ -10,6 +10,7 @@ class XOptionParser < OptionParser
     def initialize
         super
         self.banner = "Usage: #$0 [options] [base_rev]"
+        on('-n', '--dry-run', 'only show what commits would be used to rebuild the branch') { @dry_run = true }
         on('-a', '--abort', 'abort rebuild') { |value| @action = :abort }
         on('-d', '--debug') { @debug = true }
     end
@@ -21,6 +22,7 @@ class XOptionParser < OptionParser
 
     def set_defaults
         @action = :run
+        @dry_run = false
         @degug = false
     end
 
@@ -45,7 +47,7 @@ class XOptionParser < OptionParser
         end
     end
 
-    attr_reader :base_rev, :action
+    attr_reader :base_rev, :action, :dry_run
 
 end
 
@@ -61,7 +63,7 @@ begin
     when :abort
         rebuilder.abort
     when :run
-        rebuilder.run options.base_rev
+        rebuilder.run options.base_rev, dry: options.dry_run
     else
         raise "invalid action: #{options.action}"
     end
