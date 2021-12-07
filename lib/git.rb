@@ -6,7 +6,7 @@ module Git
     BASE_LOOKBACK_LIMIT = 100 # commits
     CUSTOM_BACKUP_BRANCH_PATTERN = /\A#{CUSTOM_BACKUP_BRANCH_NAME}(\d*)\Z/
     LIGHT_BACKUP_BRANCH_PATTERN = /\A#{LIGHT_BACKUP_BRANCH_NAME}(\d*)\Z/
-    BRANCH_PATTERN = /(?:tag:\s)?[\w-]+(?:\/[\w-]+)*/
+    BRANCH_PATTERN = /(?:tag:\s)?[^,]+(?:\/[^,]+)*/
     BRANCHES_PATTERN = /#{BRANCH_PATTERN}(?:,\s#{BRANCH_PATTERN})*/
 
     class LightCustomBaseNotFound < StandardError; end
